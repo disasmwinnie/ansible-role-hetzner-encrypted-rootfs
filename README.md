@@ -3,7 +3,7 @@
 This role bootstraps a Hetzner cloud VM with Debian Buster (10.4) and an encrypted rootfs with an embedded Dropbear SSH server within the initramfs.
 The role can be easily adjusted and used for a different distro, on a regular bare metal machine or even with another hoster.
 The platform specific stuff is limited to initial installer task and packages.
-For oder distros the paths might be an issue, too.
+For older distros the paths might be an issue, too.
 Still, this role is developed and tested with Debian Buster 10.4.
 Beware, with older distros you might need the take care of some additional [initramfs issues](https://github.com/HRomie/dropbear-init-fix).
 
@@ -102,7 +102,7 @@ In case everything went as planned, delete old backup, clean your bash\_history 
 Always welcome as long as it makes sense for the role's original purpose (bootstrapping).
 Please, see LICENSE file before opening a pull request.
 
-Nice to haves/known issues:
+Nice to have/known issues:
 
 * Looking at the SSH port with ssh-keyscan I still see the RSA keys for Dropbear. Looks like it generates it uppon start, altough it should not. Not sure how to get rid of it entirely, but matching of ecdsa fingerprint still works.
 * The role is really ugly. I am still not sure how to get rid of shell commands. Suggestions to this topic are welcomed.
