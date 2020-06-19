@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+/root/.oldroot/nfs/install/installimage -a -n {{ inventory_hostname }} \
+-b grub \
+-r no \
+-i /root/.oldroot/nfs/images/Debian-103-buster-64-minimal.tar.gz \
+-p /boot:ext4:512M,/:ext4:all \
+-f yes \
+-s en \
+-K /root/.ssh/robot_user_keys

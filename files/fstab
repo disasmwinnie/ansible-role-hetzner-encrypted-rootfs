@@ -1,0 +1,6 @@
+proc /proc proc defaults 0 0
+# /dev/sda1
+/dev/sda1 /boot ext4 defaults,discard 0 0
+# /dev/sda2
+/dev/mapper/root / ext4 defaults,discard 0 0
+

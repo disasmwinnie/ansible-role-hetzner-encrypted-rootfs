@@ -1,0 +1,2 @@
+/sbin/ifdown --force ens3
+/sbin/ifup --force ens3
