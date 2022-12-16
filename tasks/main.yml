@@ -141,7 +141,7 @@
   tags: hetznerinit 
   copy:
     src: authorized_keys
-    dest: /mnt/etc/dropbear-initramfs/authorized_keys
+    dest: /mnt/etc/dropbear/initramfs/authorized_keys
     mode: 0644
 
 # There shall be none except ed25519, the only truth
@@ -163,7 +163,7 @@
   when: ansible_os_family == 'Debian'
   tags: hetznerinit
   file:
-    path: "/mnt/etc/dropbear-initramfs/{{ item }}"
+    path: "/mnt/etc/dropbear/initramfs/{{ item }}"
     state: absent
   # Most of them do not exist, still keep generic if they might appear in later versions
   with_items:
@@ -192,7 +192,7 @@
   tags: hetznerinit
   copy:
     src: "{{ inventory_hostname }}/dropbear_ecdsa_host_key"
-    dest: "/mnt/etc/dropbear-initramfs/dropbear_ecdsa_host_key"
+    dest: "/mnt/etc/dropbear/initramfs/dropbear_ecdsa_host_key"
     owner: root
     group: root
     mode: 0600
@@ -202,7 +202,7 @@
   tags: hetznerinit
   template:
     src: dropbear_config.j2
-    dest: "/mnt/etc/dropbear-initramfs/config"
+    dest: "/mnt/etc/dropbear/initramfs/dropbear.conf"
     owner: root
     group: root
     mode: 0644

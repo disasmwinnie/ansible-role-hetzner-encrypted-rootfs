@@ -15,7 +15,7 @@ The reason is the role performs actions Ansible was not thought for, e.g., runni
 
 ## What it does
 
-* Install minimal Debian 10.4 image with Hetzner install scripts.
+* Install minimal Debian11/Ubuntu22.04 image (see comments in [install\_debian10.sh.j2](https://github.com/disasmwinnie/ansible-role-hetzner-encrypted-rootfs/blob/master/templates/install_debian10.sh.j2)) with Hetzner install scripts.
 * Install dependencies for the initramfs.
 * Backup the whole rootfs over rsync to YOUR local machine.
 * Wipe and overwrite the VM storage.
