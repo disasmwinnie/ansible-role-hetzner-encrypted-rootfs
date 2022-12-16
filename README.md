@@ -74,7 +74,7 @@ ansible-vault encrypt --vault-password-file "$ANSIBLE_HOME/.vault_secret" $ANSIB
 Create your rootfs password.
 
 ```bash
-ansible-vault encrypt_string --vault-password-file "$ANSIBLE_HOME/.vault_secret" "w00fw00fSECRET" --name "hddpw" >> $ANSIBLE_HOME/host_vars/example.hostname.com
+ansible-vault encrypt_string --vault-password-file "$ANSIBLE_HOME/.vault_secret" "w00fw00fSECRET" --name "hddpw" >> $ANSIBLE_HOME/host_vars/example.hostname.com.yaml
 ```
 
 Set your SSH port and a backup folder for the temporary rsync backup.
