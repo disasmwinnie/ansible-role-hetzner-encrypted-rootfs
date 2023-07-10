@@ -1,0 +1,8 @@
+CRYPTPASSWORD {{ hddpw }}
+DRIVE1 /dev/sda
+BOOTLOADER grub
+HOSTNAME {{ inventory_hostname }}
+PART /boot ext4 1G
+PART /     ext4 all crypt
+IMAGE /root/.oldroot/nfs/images/{{ hetzner_image }}
+SSHKEYS_URL /root/.ssh/authorized_keys

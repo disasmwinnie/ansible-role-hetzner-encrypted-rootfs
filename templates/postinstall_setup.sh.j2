@@ -1,0 +1,79 @@
+#!/bin/bash
+
+############################################################
+#### The hooks are needed for routing to work in hetzner VM.
+#### This was taken from the tutorial on https://community.hetzner.com/tutorials/install-ubuntu-2004-with-full-disk-encryption
+############################################################
+
+add_rfc3442_hook() {
+  cat << EOF > /etc/initramfs-tools/hooks/add-rfc3442-dhclient-hook
+#!/bin/sh
+
+PREREQ=""
+
+prereqs()
+{
+        echo "\$PREREQ"
+}
+
+case \$1 in
+prereqs)
+        prereqs
+        exit 0
+        ;;
+esac
+
+if [ ! -x /sbin/dhclient ]; then
+        exit 0
+fi
+
+. /usr/share/initramfs-tools/scripts/functions
+. /usr/share/initramfs-tools/hook-functions
+
+mkdir -p \$DESTDIR/etc/dhcp/dhclient-exit-hooks.d/
+cp -a /etc/dhcp/dhclient-exit-hooks.d/rfc3442-classless-routes \$DESTDIR/etc/dhcp/dhclient-exit-hooks.d/
+EOF
+
+  chmod +x /etc/initramfs-tools/hooks/add-rfc3442-dhclient-hook
+}
+
+
+# Install hook
+add_rfc3442_hook
+
+# Copy SSH keys for dropbear
+mkdir -p /etc/dropbear/initramfs
+cp -a /root/.ssh/authorized_keys /etc/dropbear/initramfs/authorized_keys
+
+# Update system
+apt-get update >/dev/null
+apt-get dist-upgrade -y >/dev/null
+apt-get -y install cryptsetup-initramfs dropbear-initramfs > /dev/null
+apt-get -y autoremove > /dev/null
+
+# delete all generated ssh host keys
+rm -f /etc/dropbear/initramfs/dropbear_*_host_key
+rm -f /etc/ssh/ssh_host_*key*
+
+# Host key for SSHD
+echo "{{ ssh_host_ed25519_key }}"  > /etc/ssh/ssh_host_ed25519_key
+echo "{{ ssh_host_ed25519_key_pub }}"  > /etc/ssh/ssh_host_ed25519_key.pub
+
+# Convert OpenSSH host key to a dropkey host key
+dropbearconvert openssh dropbear /etc/ssh/ssh_host_ed25519_key /etc/dropbear/initramfs/dropbear_ed25519_host_key
+
+chown root:root /etc/ssh/ssh_host*
+chown root:root /etc/dropbear/dropbear_*_key
+
+chmod 600 /etc/ssh/ssh_host*
+chmod 600 /etc/dropbear/dropbear_*_key
+
+# see dropbear(8)
+echo 'DROPBEAR_OPTIONS="-FEsjk -c cryptroot-unlock -p {{ ssh_port | default(22) }}"' >> /etc/dropbear/initramfs/dropbear.conf
+
+# set ssh port vor OpenSSH server
+echo 'Port {{ ssh_port | default(22) }}' >> /etc/ssh/sshd_config
+
+# rebuild initramfs
+update-initramfs -c -k all
+update-grub

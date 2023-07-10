@@ -1,41 +1,40 @@
 # ansible-role-hetzner-encrypted-rootfs
 
-This role bootstraps a Hetzner cloud VM with Debian Buster (10.4) and an encrypted rootfs with an embedded Dropbear SSH server within the initramfs.
-The role can be easily adjusted and used for a different distro, on a regular bare metal machine or even with another hoster.
-The platform specific stuff is limited to initial installer task and packages.
-For older distros the paths might be an issue, too.
-Still, this role is developed and tested with Debian Buster 10.4.
-Beware, with older distros you might need the take care of some additional [initramfs issues](https://github.com/HRomie/dropbear-init-fix).
+This role bootstraps a Hetzner cloud VM with Debian Bookwork (12.0) and an encrypted rootfs with an embedded Dropbear SSH server within the initramfs.
+The role can be easily adjusted and used for a different Debian-based distro like Ubuntu 22.04 (see ``vars`` directory).
+However, using it for older versions, e.g., Debian Buster, will require to adjust the template-scripts.
+Mainly, the path changed from ``/etc/dropbear-initramfs`` to ``/etc/dropbear/initramfs`` beginning with Debian 12.
 
-**This is the ugliest role I have ever written!**
-It is not idempotent.
-It copies around bash scripts and executes them afterwards (for chroot).
-There are often commands executed directly, where you would expect a sane person to use Ansible built-in functionality.
-The reason is the role performs actions Ansible was not thought for, e.g., running in rescue mode or using LUKS with password over stdin.
+The role is technically not idempotent.
+It copies around bash scripts and executes them afterwards.
+
+This role re-uses the rescue mode ``installimage`` functionality for rootfs encryption.
+
 
 ## What it does
 
-* Install minimal Debian11/Ubuntu22.04 image (see comments in [install\_debian10.sh.j2](https://github.com/disasmwinnie/ansible-role-hetzner-encrypted-rootfs/blob/master/templates/install_debian10.sh.j2)) with Hetzner install scripts.
-* Install dependencies for the initramfs.
-* Backup the whole rootfs over rsync to YOUR local machine.
-* Wipe and overwrite the VM storage.
-* Set up partitioning layout.
-* Encrypt the rootfs with the desired password.
-* Restore the backup to the encrypted rootfs.
-* Bootstrap hostkeys for Dropbear and OpenSSH (fixed fingerprints throughout installations).
-* Copy over Dropbear configs.
-* Generate initramfs.
+* In copies a ``install_image.conf`` to rescue image. And sets following variables from vars.
+  * hddpw (**BEWARE**, it is stored inside /tmp dir on the rescue image during install)
+  * inventory\_hostname (hostname from Ansible's hosts file)
+  * hetzner\_image (see ``vars/main.yaml``)
+* The ssh pubkey from the root user in you set in the rescue mode, is used for
+  * root user in the installed VM and
+  * root user for dropbear initramfs
+  * The host\_key is the same for Dropbear AND OpenSSH, which eliminates fiddeling with ``known\_hosts`` file and is more secure.
+* Set the SSH port for Dropbear initramfs and OpenSSH server inside the VM's sshd\_config
+* ``dd`` with /dev/urandom onto /dev/sda
 
 ## Prerequisites
 
-Your VM must be booted in rescue mode respectively another live-image.
+Your VM must be booted into Hetzner's rescue mode.
+Note, Hetzner rescue mode will auto-generate SSH host keys on boot, you'll have to accept and delete them on your local machine after the install inside the ``known\_hosts`` file.
+On first boot after install, use ``ssh-keyscan``.
 The following files-folder structure inside ANSIBLE\_HOME is expected to enable predefined hostkeys.
 
 ```
-├── crypted_rootfs_hosts
+├── hosts_crypted_rootfs
 ├── files
 │   ├── example.hostname.com
-│   │   ├── dropbear_ecdsa_host_key
 │   │   ├── ssh_host_ed25519_key
 │   │   └── ssh_host_ed25519_key.pub
 │   ├── [...]
@@ -51,59 +50,50 @@ The following files-folder structure inside ANSIBLE\_HOME is expected to enable 
 
 The SSH pubkey for the booted machine is copied with Hetzner's install script.
 That is the reason you won't find it anywhere in this role.
-The pubkey for Dropbear, however, you have to take care of yourself.
-Put your ecdsa pubkey into ``files/authorized_keys``.
 
-Create the host keys.
+Create the host key.
 
 ```bash
 ssh-keygen -t ed25519 -f $ANSIBLE_HOME/files/example.hostname.com/ssh_host_ed25519_key
-dropbearkey -t ecdsa -f $ANSIBLE_HOME/files/example.hostname.com/dropbear_ecdsa_host_key
 ```
 
-Dropbear support for ed25519 was recently added, but it will take some time until this lands into a stable package.
-For now, ecdsa seems like a good alternative to dsa and rsa.
-
-Encrypt your priv keys.
+Encrypt your priv/host key.
 
 ```bash
 ansible-vault encrypt --vault-password-file "$ANSIBLE_HOME/.vault_secret" $ANSIBLE_HOME/files/example.hostname.com/ssh_host_ed25519_key
-ansible-vault encrypt --vault-password-file "$ANSIBLE_HOME/.vault_secret" $ANSIBLE_HOME/files/example.hostname.com/dropbear_ecdsa_host_key
 ```
 
 Create your rootfs password.
 
 ```bash
-ansible-vault encrypt_string --vault-password-file "$ANSIBLE_HOME/.vault_secret" "w00fw00fSECRET" --name "hddpw" >> $ANSIBLE_HOME/host_vars/example.hostname.com.yaml
+ansible-vault encrypt_string --vault-password-file "$ANSIBLE_HOME/.vault_secret" "w00fw00fSECRET-REPLACE-ME" --name "hddpw" >> $ANSIBLE_HOME/host_vars/example.hostname.com.yaml
 ```
 
-Set your SSH port and a backup folder for the temporary rsync backup.
+Set your SSH port (otherwise 22 is used as default).
 
 ```bash
 echo "ssh_port: 2222" >> $ANSIBLE_HOME/group_vars/all/main.yml
-echo "backup_path: $ANSIBLE_HOME/somefolder" >> $ANSIBLE_HOME/group_vars/all/main.yml
 ```
+
+Or locally for a destinct VM.
+
+```bash
+echo "ssh_port: 2222" >> $ANSIBLE_HOME/host_vars/example.hostname.com.yml
+```
+
 In case you are not executing your playbooks with root, for this role you have to, unfortunately.
 This is required for rsync to preserve file permissions and UIDs of the rootfs backup.
 
 ```bash
-sudo bash -c 'eval "$(ssh-agent -s)"; ssh-add $HOME/.ssh/id_ed25519; ANSIBLE_CONFIG=$ANSIBLE_HOME/ansible.cfg\
-  ansible-playbook --vault-password-file $ANSIBLE_HOME/.vault_secret\
-  -i $ANSIBLE_HOME/crypted_rootfs_hosts\
-  $ANSIBLE_HOME/hetzner_crypted_rootfs.yml\
-  --limit $HOST'
+export HOST=example.hostname.com
+export ANSIBLE_HOME=path/to/ansible/root
+
+ansible-playbook --vault-password-file $ANSIBLE_HOME/.vault_secret\
+$ANSIBLE_HOME/hetzner_crypted_rootfs.yml\
+-i $ANSIBLE_HOME/crypted_rootfs_hosts\
+--limit $HOST
 ```
 
-In case everything went as planned, delete old backup, clean your bash\_history of the vault command (hddpw) and enjoy life.
+## Credits
 
-
-## Contributions
-
-Always welcome as long as it makes sense for the role's original purpose (bootstrapping).
-Please, see LICENSE file before opening a pull request.
-
-Nice to have/known issues:
-
-* Looking at the SSH port with ssh-keyscan I still see the RSA keys for Dropbear. Looks like it generates it uppon start, altough it should not. Not sure how to get rid of it entirely, but matching of ecdsa fingerprint still works.
-* The role is really ugly. I am still not sure how to get rid of shell commands. Suggestions to this topic are welcomed.
-* Systemd-boot would be interesting, but since Hetzner uses legacy BIOS, GRUB is a mandatory feature for this role. Possible PRs should check for the particular boot-mode.
+The rfc3442 hook is from https://community.hetzner.com/tutorials/install-ubuntu-2004-with-full-disk-encryption.

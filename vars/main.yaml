@@ -1,0 +1,7 @@
+---
+# Currently supported images by Hetzner's rescue mode reside in /root/.oldroot/nfs/images/
+# While only Debian Bookworm is tested, other Debian-based images like Ubuntu 22.04 "should" work.
+# Beware that older distros use /etc/dropbear-initramfs path instead of /etc/dropbear/initramfs.
+# In that case you have to adjust the paths inside the postinstall script.
+hetzner_image: "Debian-1200-bookworm-amd64-base.tar.gz"
+#hetzner_image: "Ubuntu-2204-jammy-amd64-base.tar.gz"

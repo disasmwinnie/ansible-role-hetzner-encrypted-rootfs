@@ -1,1 +1,0 @@
-root /dev/sda2 none luks,initramfs

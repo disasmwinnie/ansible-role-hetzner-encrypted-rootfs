@@ -1,243 +1,38 @@
 ---
+- name: Load ssh_host_key into a variable (used in postinstall.sh)
+  set_fact:
+    ssh_host_ed25519_key: "{{ lookup('ansible.builtin.file', inventory_hostname + '/ssh_host_ed25519_key') }}"
+
+- name: Load ssh_host_key.pub into a variable (used in postinstall.sh)
+  set_fact:
+    ssh_host_ed25519_key_pub: "{{ lookup('ansible.builtin.file', inventory_hostname + '/ssh_host_ed25519_key.pub') }}"
+
 - name: Copy Install Script for Hetzner's Debian version
   when: ansible_os_family == 'Debian'
-  tags: hetznerinit 
+  tags: hetznerinit
   template:
-    src: install_debian10.sh.j2
-    dest: /tmp/install_debian10.sh
-    mode: 0655
+    src: install_image.conf.j2
+    dest: /tmp/install_image.conf
+    mode: 0755
 
-- name: Install Debian 10 via Hetzner's install script
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit 
-  command:
-    cmd: /tmp/install_debian10.sh
-
-- include: mount_volumes.yml
-- include: mount_virtual_volumes.yml
-
-- name: Script file for dependencies (in chroot)
+- name: Copy post-install script (mainly dropbear and ssh setup)
   when: ansible_os_family == "Debian"
-  tags: hetznerinit 
-  copy:
-    src: install_crap.sh
-    dest: /mnt/tmp/install_crap.sh
-    mode: 0655
+  tags: hetznerinit
+  template:
+    src: postinstall_setup.sh.j2
+    dest: /tmp/postinstall_setup.sh
+    mode: 0755
 
-- name: Install dependencies in chroot env
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit 
-  command:
-    cmd: chroot /mnt /tmp/install_crap.sh
-
-- include: unmount_all.yml # no proc/dev for upcomming backup
-- include: mount_volumes.yml
-
-
-- name: Backup all files
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit 
-  local_action: "command rsync -e 'ssh -p 22' -aAXv root@{{ inventory_hostname }}:/mnt/ {{ backup_path }}/{{ inventory_hostname }}"
-
-- include: unmount_all.yml # get rid of sda{1,2}
-
-- name: Compress backup locally (uplink is slow)
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit 
-  local_action: "shell tar -czf {{ backup_path }}/{{ inventory_hostname }}.gz -C {{ backup_path }}/{{ inventory_hostname }}/ ."
-  
 - name: Wipe old root.
   when: ansible_os_family == 'Debian'
-  tags: hetznerinit 
+  tags: hetznerinit
   command: "dd bs=1M if=/dev/urandom of=/dev/sda"
   ignore_errors: yes  # dd always fails with out of space
 
-- name: Create sda1 partition.
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit 
-  parted: 
-    device: /dev/sda
-    number: 1
-    state: present
-    part_end: 512MiB
-
-- name: Create sda2 partition.
+- name: Execute Install Image
   when: ansible_os_family == 'Debian'
   tags: hetznerinit
-  parted: 
-    device: /dev/sda
-    number: 2
-    state: present
-    part_start: 512MiB
-
-# BEWARE: the command (and pw) is saved in the systemd journal/logs in the rescue system
-- name: cryptsetup for root
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit 
-  shell: '/bin/echo -n "{{ hddpw }}" | /sbin/cryptsetup --cipher aes-xts-plain64 --key-size 512 --hash sha256 --iter-time 2000 luksFormat /dev/sda2 - '
-  register: luksformat
-
-- name: cryptsetup open root
-  when: ansible_os_family == 'Debian' and luksformat is succeeded
-  tags: hetznerinit 
-  shell: '/bin/echo -n "{{ hddpw }}" | /sbin/cryptsetup luksOpen /dev/sda2 root -'
-  register: luksopen
-
-- name: create filesystems
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit 
-  filesystem:
-    fstype: ext4
-    dev: "{{ item }}" 
-  loop:
-    - /dev/sda1
-    - /dev/mapper/root
-  loop_control:
-    label: "{{ item }}"
-
-- include: mount_crypted_volumes.yml
-
-- name: Unpack root-files in /mnt
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit 
-  unarchive:
-    src: "{{ backup_path }}/{{ inventory_hostname }}.gz"
-    dest: "/mnt/"
-
-- name: Copy fstab (with crypted root)
-  when: ansible_os_family == "Debian"
-  tags: hetznerinit 
-  copy:
-    src: fstab
-    dest: /mnt/etc/fstab
-    mode: 0644
-
-- name: Copy crypttab (with crypted root)
-  when: ansible_os_family == "Debian"
-  tags: hetznerinit 
-  copy:
-    src: crypttab
-    dest: /mnt/etc/crypttab
-    mode: 0644
-
-- name: Copy modified /etc/default/grub (crypto support)
-  when: ansible_os_family == "Debian"
-  tags: hetznerinit 
-  copy:
-    src: default_grub 
-    dest: /mnt/etc/default/grub
-    mode: 0644
-
-- name: Copy rc.local (net interface won't come up - fix)
-  when: ansible_os_family == "Debian"
-  tags: hetznerinit 
-  copy:
-    src: rc.local 
-    dest: /mnt/etc/rc.local
-    mode: 0755
-
-- name: Copy decrypt key
-  when: ansible_os_family == "Debian"
-  tags: hetznerinit 
-  copy:
-    src: authorized_keys
-    dest: /mnt/etc/dropbear/initramfs/authorized_keys
-    mode: 0644
-
-# There shall be none except ed25519, the only truth
-- name: Purge undesired ssh_host keys
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit
-  file:
-    path: "/mnt/etc/ssh/{{ item }}"
-    state: absent
-  with_items:
-    - ssh_host_ecdsa_key
-    - ssh_host_ecdsa_key.pub
-    - ssh_host_dsa_key
-    - ssh_host_dsa_key.pub
-    - ssh_host_rsa_key
-    - ssh_host_rsa_key.pub
-
-- name: Purge undesired ssh_host keys in dropbear
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit
-  file:
-    path: "/mnt/etc/dropbear/initramfs/{{ item }}"
-    state: absent
-  # Most of them do not exist, still keep generic if they might appear in later versions
-  with_items:
-    - dropbear_rsa_host_key
-    - dropbear_rsa_host_key.pub
-    - dropbear_dsa_host_key
-    - dropbear_dsa_host_key.pub
-    - dropbear_dss_host_key
-    - dropbear_dss_host_key.pub
-
-- name: Copy predefined ssh_host keys
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit
-  copy:
-    src: "{{ inventory_hostname }}/{{ item }}"
-    dest: "/mnt/etc/ssh/{{ item }}"
-    owner: root
-    group: root
-    mode: 0600
-  with_items:
-    - ssh_host_ed25519_key
-    - ssh_host_ed25519_key.pub
-
-- name: Copy predefined ssh_host keys to dropbear
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit
-  copy:
-    src: "{{ inventory_hostname }}/dropbear_ecdsa_host_key"
-    dest: "/mnt/etc/dropbear/initramfs/dropbear_ecdsa_host_key"
-    owner: root
-    group: root
-    mode: 0600
-
-- name: Copy dropbear ssh initramfs config
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit
-  template:
-    src: dropbear_config.j2
-    dest: "/mnt/etc/dropbear/initramfs/dropbear.conf"
-    owner: root
-    group: root
-    mode: 0644
-
-- name: Set ssh port, ready for later bootstrappping
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit
-  lineinfile:
-    path: /mnt/etc/ssh/sshd_config
-    line: "Port {{ ssh_port }}"
-    create: yes
-
-- include: mount_virtual_volumes.yml
-
-- name: Copy grub-reinstall script (to be executed in chroot)
-  when: ansible_os_family == "Debian"
-  tags: hetznerinit 
-  copy:
-    src: reinstall_grub.sh
-    dest: /mnt/tmp/reinstall_grub.sh
-    mode: 0755
-
-- name: Run grub-reinstall in chroot
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit 
-  command: chroot /mnt /tmp/reinstall_grub.sh
-
-- include: unmount_all.yml
-
-- name: close the existing crypt root
-  when: ansible_os_family == 'Debian'
-  tags: hetznerinit 
-  luks_device:
-    state: "closed"
-    name: "root"
+  shell: '/root/.oldroot/nfs/install/installimage -a -c /tmp/install_image.conf -x /tmp/postinstall_setup.sh'
 
 - name: reboot
   when: ansible_os_family == 'Debian'
